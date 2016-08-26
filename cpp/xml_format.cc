@@ -1,5 +1,7 @@
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <string>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
 
@@ -8,7 +10,10 @@
 
 #include "xml_format.h"
 
-
+typedef __int32 int32_t;
+typedef unsigned __int32 uint32_t;
+typedef __int64 int64_t;
+typedef unsigned __int64 uint64_t;
 #define XML_TRUE_STRING "true"
 #define XML_FALSE_STRING "false"
 
@@ -32,10 +37,23 @@ void XmlFormat::Printer::PrintToXmlString(const Message& message,
   rapidxml::xml_document<> doc;
 
   MessageToDOM(message,&doc);
-
   std::stringstream ss;
   ss << doc;
   *output = ss.str();
+
+ // rapidxml::xml_node<>* root = doc.first_node();
+  //std::cout << root->name() << std::endl;
+
+  //! 获取根节点第一个节点  
+   ///rapidxml::xml_node<>* node1 = root->first_node();
+  //std::cout << node1->name() << std::endl;
+
+ // rapidxml::xml_node<>* node11 = node1->first_node();
+ // std::cout << node11->name() << std::endl;
+ // std::cout << node11->value() << std::endl;
+  //rapidxml::xml_node<>* node12 = node11->first_node();
+ // std::cout << node12->name() << std::endl;
+ // std::cout << node12->value() << std::endl;
 
 }
 
@@ -48,7 +66,7 @@ void XmlFormat::Printer::MessageToDOM(const Message& message, rapidxml::xml_docu
 	doc->append_node(xml_decl);
 
 	// the root node of the protobuf xml is the name of the protobuf container
-	rapidxml::xml_node<> *root_node = doc->allocate_node(rapidxml::node_element, message.GetDescriptor()->name().c_str());
+	rapidxml::xml_node<> *root_node = doc->allocate_node(rapidxml::node_element, doc->allocate_string(message.GetDescriptor()->name().c_str()));
 	doc->append_node(root_node);
 
 	PrintXml(message, doc, root_node);
@@ -101,15 +119,19 @@ string XmlFormat::Printer::GetXmlFieldName(const Message& message,
 				&& field->type() == FieldDescriptor::TYPE_MESSAGE
 				&& field->is_optional()
 				&& field->extension_scope() == field->message_type()) {
+			//cout << field->message_type()->full_name().c_str()<<endl;
 			return field->message_type()->full_name();
 		} else {
+			//cout << field->full_name().c_str()<<endl;
 			return field->full_name();
 		}
 	} else {
 		if (field->type() == FieldDescriptor::TYPE_GROUP) {
 			// Groups must be serialized with their original capitalization.
+			//cout << field->full_name().c_str() << endl;
 			return field->message_type()->name();
 		} else {
+		//	cout << field->full_name().c_str() << endl;
 			return field->name();
 		}
 	}
@@ -128,27 +150,27 @@ void XmlFormat::Printer::PrintXmlFieldValue(
 
 	switch (field->cpp_type()) {
 
-	//tm use the preprocessor to generate the numerical value cases
-	// replace the google used string methods with using a stringstream
-	#define OUTPUT_FIELD(CPPTYPE, METHOD, NUM_TYPE)                         \
-      case FieldDescriptor::CPPTYPE_##CPPTYPE: {                              \
-        NUM_TYPE value = field->is_repeated() ?                      \
-          reflection->GetRepeated##METHOD(message, field, field_index) :     \
-          reflection->Get##METHOD(message, field);                          \
-        stringstream number_stream; \
-	    number_stream << value; \
-    	rapidxml::xml_node<> *string_node = doc->allocate_node(              \
-    	  rapidxml::node_element,                                      \
-    	  GetXmlFieldName(message, reflection, field).c_str(),         \
-    	  number_stream.str().c_str());                                              \
+		//tm use the preprocessor to generate the numerical value cases
+		// replace the google used string methods with using a stringstream
+#define OUTPUT_FIELD(CPPTYPE, METHOD, NUM_TYPE)                         \
+	case FieldDescriptor::CPPTYPE_##CPPTYPE: {                              \
+	NUM_TYPE value = field->is_repeated() ? \
+	reflection->GetRepeated##METHOD(message, field, field_index) : \
+	reflection->Get##METHOD(message, field);                          \
+	stringstream number_stream; \
+	number_stream << value; \
+	rapidxml::xml_node<> *string_node = doc->allocate_node(\
+	rapidxml::node_element, \
+	doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()), \
+	doc->allocate_string(number_stream.str().c_str()));                                              \
     	node->append_node(string_node);                                      \
         break;                                                               \
       }
 
-      OUTPUT_FIELD( INT32,  Int32, int32_t);
-      OUTPUT_FIELD( INT64,  Int64, int64_t);
-      OUTPUT_FIELD(UINT32, UInt32, uint32_t);
-      OUTPUT_FIELD(UINT64, UInt64, uint64_t);
+      OUTPUT_FIELD( INT32,  Int32, int32);
+      OUTPUT_FIELD( INT64,  Int64, int64);
+      OUTPUT_FIELD(UINT32, UInt32, uint32);
+      OUTPUT_FIELD(UINT64, UInt64, uint64);
       OUTPUT_FIELD( FLOAT,  Float, float);
       OUTPUT_FIELD(DOUBLE, Double, double);
 #undef OUTPUT_FIELD
@@ -160,9 +182,11 @@ void XmlFormat::Printer::PrintXmlFieldValue(
               message, field, field_index, &scratch) :
             reflection->GetStringReference(message, field, &scratch);
 
-    	rapidxml::xml_node<> *string_node = doc->allocate_node(rapidxml::node_element,
-    			GetXmlFieldName(message, reflection, field).c_str(),
-    			value.c_str());
+    	rapidxml::xml_node<char> *string_node = doc->allocate_node(rapidxml::node_element,
+			doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
+			doc->allocate_string(value.c_str()));
+	     cout << string_node->name() << endl;
+		 cout << string_node->value() << endl;
     	node->append_node(string_node);
 
         break;
@@ -172,25 +196,29 @@ void XmlFormat::Printer::PrintXmlFieldValue(
         if (field->is_repeated()) {
         	if (reflection->GetRepeatedBool(message, field, field_index)) {
         		rapidxml::xml_node<> *bool_node = doc->allocate_node(rapidxml::node_element,
-        			GetXmlFieldName(message, reflection, field).c_str(),
+					doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
         			XML_TRUE_STRING);
+				cout << bool_node->name() << endl;
         		node->append_node(bool_node);
         	} else {
         		rapidxml::xml_node<> *bool_node = doc->allocate_node(rapidxml::node_element,
-        			GetXmlFieldName(message, reflection, field).c_str(),
+					doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
         			XML_FALSE_STRING);
+				cout << bool_node->name() << endl;
         		node->append_node(bool_node);
         	}
         } else {
         	if (reflection->GetBool(message,field)) {
         		rapidxml::xml_node<> *bool_node = doc->allocate_node(rapidxml::node_element,
-        			GetXmlFieldName(message, reflection, field).c_str(),
+					doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
         			XML_TRUE_STRING);
+				cout << bool_node->name() << endl;
         		node->append_node(bool_node);
         	} else {
         		rapidxml::xml_node<> *bool_node = doc->allocate_node(rapidxml::node_element,
-        			GetXmlFieldName(message, reflection, field).c_str(),
+					doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
         			XML_FALSE_STRING);
+				cout << bool_node->name() << endl;
         		node->append_node(bool_node);
         	}
         }
@@ -202,16 +230,17 @@ void XmlFormat::Printer::PrintXmlFieldValue(
           reflection->GetRepeatedEnum(message, field, field_index)->name() :
           reflection->GetEnum(message, field)->name();
     	rapidxml::xml_node<> *enum_node = doc->allocate_node(rapidxml::node_element,
-    			GetXmlFieldName(message, reflection, field).c_str(),
-    			value.c_str());
+			doc->allocate_string(GetXmlFieldName(message, reflection, field).c_str()),
+			doc->allocate_string(value.c_str()));
+		
     	node->append_node(enum_node);
         break;
     }
     case FieldDescriptor::CPPTYPE_MESSAGE: {
     	// create the child node and recurse
-    	rapidxml::xml_node<> *message_node = doc->allocate_node(rapidxml::node_element, field->name().c_str());
+											   rapidxml::xml_node<> *message_node = doc->allocate_node(rapidxml::node_element, doc->allocate_string(field->name().c_str()));
     	node->append_node(message_node);
-
+		cout << message_node->name() << endl;
     	PrintXml(field->is_repeated() ?
     	                  reflection->GetRepeatedMessage(message, field, field_index) :
     	                  reflection->GetMessage(message, field),
